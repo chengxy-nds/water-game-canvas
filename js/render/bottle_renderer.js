@@ -2,7 +2,7 @@ import { COLORS, MYSTERY_COLOR } from '../config/colors.js';
 import { SPECIAL_TYPES } from '../config/mechanics.js';
 
 /**
- * 2.5D 琉璃瓶与物理重力液面纯 Canvas 2D 渲染器 (100% 对标 demo.html 原型级晶莹通透感)
+ * 按 demo.html 的瓶身轮廓与玻璃细节绘制的 Canvas 2D 瓶子渲染器。
  */
 export class BottleRenderer {
   constructor() {
@@ -90,7 +90,7 @@ export class BottleRenderer {
     this.renderThickGlassBase(ctx, geometry);
 
     // 6. 外壁高光玻璃壳、溜肩反光弧与圆润瓶口
-    this.renderGlassBodyAndNeck(ctx, geometry, isSelected, b.isGiantCat);
+    this.renderGlassBodyAndNeck(ctx, geometry, isSelected);
 
     // 7. 特殊机制 (🎬 广告场记板、色环契约、冰晶、锁扣、流沙炸弹等)
     this.renderSpecialMechanics(ctx, b, -halfW, -halfH, w, h);
@@ -122,7 +122,7 @@ export class BottleRenderer {
     return {
       w, h, sx, sy, mapX, mapY, centerY, bottomY, neckOffset,
       maxCap,
-      layerH: maxCap === 8 ? 29.8 : maxCap === 6 ? 24.2 : maxCap === 2 ? 33.5 : 36.2,
+      layerH: maxCap === 8 ? 29.8 : maxCap === 6 ? 24.2 : maxCap === 2 ? 33.5 : (b.isVariedHeight ? 27.2 : 36.2),
       layerRy: maxCap === 8 ? 7.6 : 7.8,
       outerRx: 32.2 * sx,
       innerRx: 30.2 * sx,
@@ -135,7 +135,7 @@ export class BottleRenderer {
   }
 
   /**
-   * 1. 100% 复刻原型的 3D 粗麻布编织软垫底座 (无论瓶子浮空与否，稳停在原桌面)
+   * 1. 按原型绘制枕形粗麻布软垫 (无论瓶子浮空与否，稳停在原桌面)
    */
   renderBurlapCoaster(ctx, b, halfW, halfH, liftDist = 0, outerBotY = 0) {
     const isDarkStar = b.corked || b.isGiantCat;
@@ -280,7 +280,7 @@ export class BottleRenderer {
       ctx.strokeStyle = '#d97706';
       ctx.lineWidth = 1.6;
       ctx.beginPath();
-      this.drawStar(ctx, 50, 20, 7.2, 14.5, 4.4);
+      this.drawStar(ctx, 50, 20, 5, 14.5, 4.4);
       ctx.fill();
       ctx.stroke();
     } else if (hasBeadedRing) {
@@ -304,10 +304,10 @@ export class BottleRenderer {
   }
 
   /**
-   * 瓶身微光背景背板 (100% 对齐 demo.html glassBodyGrad)
+   * 瓶身微光背景背板，使用 demo.html 的玻璃渐变与瓶身裁切轮廓
    */
   renderGlassBackdrop(ctx, geometry) {
-    const { outerRx, outerBotY, w, h } = geometry;
+    const { outerRx, w, h } = geometry;
     const bgGrad = ctx.createLinearGradient(-outerRx, 0, outerRx, 0);
     bgGrad.addColorStop(0.00, 'rgba(255, 252, 242, 0.24)');
     bgGrad.addColorStop(0.22, 'rgba(255, 248, 232, 0.09)');
@@ -327,7 +327,7 @@ export class BottleRenderer {
    * 2. 左右两侧壁真实厚度垂直折射光带 (贯穿瓶身，空瓶与满瓶皆具立体纵深)
    */
   renderSideWallRefractionBars(ctx, geometry) {
-    const { mapX, mapY, sx, sy, innerBotY } = geometry;
+    const { mapX, mapY, sx, innerBotY } = geometry;
     const shoulderBot = mapY(55 + geometry.neckOffset);
     const barH = innerBotY - shoulderBot;
     const barW = 2.4 * sx;
@@ -421,7 +421,7 @@ export class BottleRenderer {
    * 4. 绘制 2.5D 药水层 (4区 PBR 体积圆柱体 + 拱起顶面椭圆亮唇 + 倾角重力水平面)
    */
   renderLiquidLayers(ctx, b, geometry) {
-    const { innerRx, innerBotY, w, h, sy, mapY, bottomY, layerH: sourceLayerH, layerRy, neckOffset } = geometry;
+    const { innerRx, w, sy, mapY, bottomY, layerH: sourceLayerH, layerRy, neckOffset } = geometry;
     const layers = b.layers;
     const maxCap = b.maxCap || 4;
     const liquidBottomY = mapY(bottomY);
@@ -717,14 +717,13 @@ export class BottleRenderer {
   }
 
   /**
-   * 6. 3D 沉底厚玻璃高折射层与月牙焦散弧 (100% 对齐 demo.html baseCushionGrad)
+   * 6. 3D 沉底厚玻璃高折射层与月牙焦散弧
    */
   renderThickGlassBase(ctx, geometry) {
     ctx.save();
     const { mapX: x, mapY: y, sx, sy, outerBotY, innerBotY } = geometry;
 
     const outerRx = 32.2 * sx;
-    const innerRx = 30.2 * sx;
     const baseGrad = ctx.createLinearGradient(-outerRx, 0, outerRx, 0);
     baseGrad.addColorStop(0.00, 'rgba(255, 252, 240, 0.62)');
     baseGrad.addColorStop(0.14, 'rgba(165, 215, 255, 0.34)');
@@ -767,7 +766,7 @@ export class BottleRenderer {
   /**
    * 7. 外壁高光玻璃壳、溜肩反光斑与圆润瓶口
    */
-  renderGlassBodyAndNeck(ctx, geometry, isSelected, isGiantCat) {
+  renderGlassBodyAndNeck(ctx, geometry, isSelected) {
     const { mapX: x, mapY: y, sx, sy, neckOffset } = geometry;
     const neckY = (value) => y(value + neckOffset);
     const scale = Math.min(sx, sy);
@@ -803,7 +802,7 @@ export class BottleRenderer {
     ctx.globalAlpha = 0.88;
     ctx.lineWidth = (geometry.maxCap === 8 ? 1.5 : 1.15) * scale;
     ctx.beginPath();
-    ctx.ellipse(0, neckY(25.8), 13.4 * sx, 2.5 * sy, 0, 0, Math.PI);
+    ctx.ellipse(0, neckY(25.8), 13.4 * sx, 2.5 * sy, 0, Math.PI, 0, true);
     ctx.stroke();
     ctx.globalAlpha = 1;
 

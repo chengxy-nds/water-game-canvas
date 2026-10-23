@@ -57,6 +57,11 @@ export default class Main {
 
   loadLevel(levelNum) {
     this.gameState.loadLevel(levelNum);
+    const isVariedHeight = !!this.gameState.levelConfig.isVariedHeight;
+    this.gameState.bottles.forEach((bottle) => {
+      bottle.isVariedHeight = isVariedHeight;
+      bottle.neckOffsetY = isVariedHeight && bottle.maxCap === 4 ? 38 : undefined;
+    });
     const sysInfo = Platform.getSystemInfo();
     const hasBags = !!this.gameState.levelConfig.hasBags;
     this.layout.resize(sysInfo, hasBags, !!this.gameState.levelConfig.isCatBossLevel || this.gameState.remainingMoves !== null);
