@@ -125,15 +125,15 @@ export class StageLayout {
     const cols = count <= 6 ? count : 6;
     const rows = count <= 6 ? 1 : 2;
 
-    const colWidth = stage.w / cols;
-    // 常规瓶沿用原型 67:204 的槽位比例，并在网格列宽内等比缩放。
-    const maxBottleH = Math.min(186, this.screenHeight * 0.245);
-    const bottleW = Math.min(62, colWidth * 0.92, maxBottleH * 67 / 204);
-    const bottleH = bottleW * 204 / 67;
-
-    const totalBottlesH = rows * bottleH;
-    const verticalGap = Math.max(22, (stage.h - totalBottlesH) / (rows + 1));
-    const startY = stage.y + verticalGap;
+    const colWidth = stage.w * 0.86 / cols;
+    const gridX = stage.x + (stage.w - colWidth * cols) / 2;
+    // The prototype uses a noticeably slimmer silhouette than the current
+    // Canvas version; preserve bottle height and constrain width per column.
+    const bottleH = Math.min(186, this.screenHeight * 0.216);
+    const bottleW = Math.min(54, colWidth * 0.90, bottleH * 0.27);
+    const verticalGap = rows > 1 ? Math.max(22, Math.min(30, this.screenHeight * 0.030)) : 0;
+    const gridH = rows * bottleH + (rows - 1) * verticalGap;
+    const startY = stage.y + Math.max(0, (stage.h - gridH) / 2) - this.screenHeight * 0.024;
 
     bottles.forEach((b, idx) => {
       const curBottleH = bottleH;
@@ -141,7 +141,7 @@ export class StageLayout {
       const r = Math.floor(idx / cols);
       const c = idx % cols;
       const countInRow = (r === rows - 1) ? (count - r * cols) : cols;
-      const rowStartX = stage.x + (stage.w - countInRow * colWidth) / 2;
+      const rowStartX = gridX + (cols - countInRow) * colWidth / 2;
 
       const centerX = rowStartX + c * colWidth + colWidth / 2;
       const rowBaseY = startY + r * (bottleH + verticalGap) + bottleH;

@@ -233,8 +233,7 @@ export class UIRenderer {
     const btnSize = Math.min(64, Math.max(52, (rect.w - 14 * 3) / count));
     const totalW = count * btnSize + 14 * (count - 1);
     const startX = rect.x + (rect.w - totalW) / 2;
-    const startY = rect.y + Math.max(0, (rect.h - (btnSize + 18)) / 2);
-    const labels = { restart: '重玩', shuffle: '打乱', undo: '撤回', hint: '提示' };
+    const startY = rect.y + Math.max(0, (rect.h - btnSize) / 2);
 
     dockButtons.forEach((btn, idx) => {
       const bx = startX + idx * (btnSize + 14);
@@ -245,20 +244,10 @@ export class UIRenderer {
         x: bx,
         y: by,
         w: btnSize,
-        h: btnSize + 20
+        h: btnSize
       });
 
       this.drawMedallionButton(ctx, bx, by, btnSize, btn.type, btn.badge);
-      ctx.save();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '800 11px "Fredoka", "Microsoft YaHei", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.shadowColor = 'rgba(74, 46, 13, 0.58)';
-      ctx.shadowBlur = 3;
-      ctx.shadowOffsetY = 1;
-      ctx.fillText(labels[btn.type], bx + btnSize / 2, by + btnSize + 10);
-      ctx.restore();
     });
   }
 
@@ -331,7 +320,10 @@ export class UIRenderer {
       const bx = x + size - 4;
       const by = y + 4;
 
-      ctx.fillStyle = '#ef4444';
+      const badgeGrad = ctx.createLinearGradient(bx, by - badgeR, bx, by + badgeR);
+      badgeGrad.addColorStop(0, '#ffd86b');
+      badgeGrad.addColorStop(1, '#e59b29');
+      ctx.fillStyle = badgeGrad;
       ctx.beginPath();
       ctx.arc(bx, by, badgeR, 0, Math.PI * 2);
       ctx.fill();

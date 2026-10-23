@@ -404,32 +404,28 @@ export default class Main {
     const w = this.layout.screenWidth;
     const h = this.layout.screenHeight;
 
-    // A. 基础线性渐变 (112度：左上暖金 -> 中间琥珀 -> 右下鼠尾草绿)
-    // CSS prototype uses a 112deg gradient: light starts bottom-left and
-    // travels toward the upper-right, matching this diagonal vector.
-    const baseLinear = this.ctx.createLinearGradient(0, h, w, 0);
-    baseLinear.addColorStop(0.00, '#b59756');
-    baseLinear.addColorStop(0.28, '#d3ab55');
-    baseLinear.addColorStop(0.56, '#da9b43');
-    baseLinear.addColorStop(0.88, '#88986b');
-    baseLinear.addColorStop(1.00, '#6f8661');
+    // Match the supplied prototype image: a clean, warm amber field without
+    // the grey-sage cast caused by stretching the CSS diagonal incorrectly.
+    const baseLinear = this.ctx.createLinearGradient(0, h, 0, 0);
+    baseLinear.addColorStop(0.00, '#dda143');
+    baseLinear.addColorStop(0.48, '#e3aa48');
+    baseLinear.addColorStop(1.00, '#e8b34d');
 
     this.ctx.fillStyle = baseLinear;
     this.ctx.fillRect(0, 0, w, h);
 
     // B. 中下部琥珀橘暖阳光晕 (ellipse at 30% 56%)
-    const midAmber = this.ctx.createRadialGradient(w * 0.30, h * 0.56, 10, w * 0.30, h * 0.56, w * 0.75);
-    midAmber.addColorStop(0.00, 'rgba(231, 164, 68, 0.45)');
-    midAmber.addColorStop(0.48, 'rgba(223, 157, 63, 0.28)');
-    midAmber.addColorStop(1.00, 'rgba(216, 155, 68, 0.0)');
+    const midAmber = this.ctx.createRadialGradient(w * 0.46, h * 0.52, 10, w * 0.46, h * 0.52, w * 0.78);
+    midAmber.addColorStop(0.00, 'rgba(255, 204, 95, 0.10)');
+    midAmber.addColorStop(1.00, 'rgba(255, 204, 95, 0.0)');
 
     this.ctx.fillStyle = midAmber;
     this.ctx.fillRect(0, 0, w, h);
 
     // C. 顶部暖阳微光晕 (circle at 46% 19%)
     const topGlow = this.ctx.createRadialGradient(w * 0.46, h * 0.19, 0, w * 0.46, h * 0.19, w * 0.55);
-    topGlow.addColorStop(0.00, 'rgba(255, 232, 135, 0.44)');
-    topGlow.addColorStop(0.38, 'rgba(255, 224, 110, 0.12)');
+    topGlow.addColorStop(0.00, 'rgba(255, 232, 135, 0.18)');
+    topGlow.addColorStop(0.38, 'rgba(255, 224, 110, 0.06)');
     topGlow.addColorStop(1.00, 'rgba(255, 224, 110, 0.0)');
 
     this.ctx.fillStyle = topGlow;

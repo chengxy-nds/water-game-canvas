@@ -139,9 +139,9 @@ export class BottleRenderer {
       sideGrad.addColorStop(0.0, '#5a421b');
       sideGrad.addColorStop(1.0, '#2c1e09');
     } else {
-      sideGrad.addColorStop(0.0, '#deb87a');
-      sideGrad.addColorStop(0.4, '#ba8b45');
-      sideGrad.addColorStop(1.0, '#6d451a');
+      sideGrad.addColorStop(0.0, '#bd945c');
+      sideGrad.addColorStop(0.4, '#98703d');
+      sideGrad.addColorStop(1.0, '#60451f');
     }
     ctx.fillStyle = sideGrad;
     ctx.beginPath();
@@ -154,9 +154,9 @@ export class BottleRenderer {
       topGrad.addColorStop(0.0, '#8c6b32');
       topGrad.addColorStop(1.0, '#4e3b1c');
     } else {
-      topGrad.addColorStop(0.0, '#faedd2');
-      topGrad.addColorStop(0.5, '#e5c48b');
-      topGrad.addColorStop(1.0, '#b88d4d');
+      topGrad.addColorStop(0.0, '#e1d0ae');
+      topGrad.addColorStop(0.5, '#c4ad82');
+      topGrad.addColorStop(1.0, '#9b7c50');
     }
     ctx.fillStyle = topGrad;
     ctx.beginPath();
@@ -164,7 +164,7 @@ export class BottleRenderer {
     ctx.fill();
 
     // 顶缘极细亮金色高光线
-    ctx.strokeStyle = isDarkStar ? 'rgba(255, 220, 160, 0.45)' : 'rgba(255, 252, 240, 0.88)';
+    ctx.strokeStyle = isDarkStar ? 'rgba(255, 220, 160, 0.45)' : 'rgba(255, 243, 214, 0.62)';
     ctx.lineWidth = 1.0;
     ctx.stroke();
 
@@ -593,12 +593,12 @@ export class BottleRenderer {
 
     // 1. 沉底厚玻璃高折射层 (晶莹水晶冰蓝高折射，杜绝脏暗深圈)
     const baseGrad = ctx.createLinearGradient(-outerRx, innerBotY, outerRx, outerBotY + 4);
-    baseGrad.addColorStop(0.00, 'rgba(255, 255, 255, 0.70)');
-    baseGrad.addColorStop(0.18, 'rgba(215, 240, 255, 0.45)');
-    baseGrad.addColorStop(0.38, 'rgba(180, 222, 255, 0.26)');
-    baseGrad.addColorStop(0.58, 'rgba(165, 212, 252, 0.22)');
-    baseGrad.addColorStop(0.80, 'rgba(210, 238, 255, 0.52)');
-    baseGrad.addColorStop(1.00, 'rgba(255, 255, 255, 0.75)');
+    baseGrad.addColorStop(0.00, 'rgba(255, 252, 244, 0.62)');
+    baseGrad.addColorStop(0.18, 'rgba(235, 225, 205, 0.44)');
+    baseGrad.addColorStop(0.38, 'rgba(192, 169, 132, 0.28)');
+    baseGrad.addColorStop(0.58, 'rgba(168, 144, 109, 0.26)');
+    baseGrad.addColorStop(0.80, 'rgba(231, 218, 192, 0.48)');
+    baseGrad.addColorStop(1.00, 'rgba(255, 250, 237, 0.64)');
 
     ctx.fillStyle = baseGrad;
     ctx.beginPath();
@@ -611,13 +611,13 @@ export class BottleRenderer {
     ctx.fill();
 
     // 2. 厚底玻璃内部月牙形焦散反光弧 (glassBaseRimHighlight)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.88)';
+    ctx.strokeStyle = 'rgba(255, 247, 226, 0.72)';
     ctx.lineWidth = 1.35;
     ctx.beginPath();
     ctx.ellipse(0, outerBotY - 0.5, outerRx * 0.94, 6.2, 0, 0.1 * Math.PI, 0.9 * Math.PI);
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(195, 232, 255, 0.65)';
+    ctx.strokeStyle = 'rgba(211, 183, 139, 0.55)';
     ctx.lineWidth = 1.0;
     ctx.beginPath();
     ctx.ellipse(0, innerBotY + 1.0, innerRx * 0.92, 4.8, 0, 0.1 * Math.PI, 0.9 * Math.PI);
@@ -690,6 +690,29 @@ export class BottleRenderer {
     ctx.beginPath();
     ctx.ellipse(0, neckTop + 0.3, neckHalfW * 0.65, 2.0, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    // Prototype bottles carry a small cool-blue glass collar at the mouth.
+    // The former white lip alone made every bottle look unfinished and flat.
+    const stopperW = neckHalfW * 2 + 3.5;
+    const stopperY = neckTop - 4.2;
+    const stopperGrad = ctx.createLinearGradient(0, stopperY, 0, neckTop + 2.5);
+    stopperGrad.addColorStop(0, 'rgba(225, 248, 255, 0.98)');
+    stopperGrad.addColorStop(0.48, 'rgba(132, 193, 225, 0.96)');
+    stopperGrad.addColorStop(1, 'rgba(78, 142, 188, 0.92)');
+    ctx.fillStyle = stopperGrad;
+    ctx.strokeStyle = 'rgba(255,255,255,0.96)';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.roundRect(-stopperW / 2, stopperY, stopperW, 6.8, 2.4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.beginPath();
+    ctx.ellipse(0, stopperY, stopperW / 2, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(95, 159, 199, 0.8)';
+    ctx.lineWidth = 0.7;
+    ctx.stroke();
 
     ctx.restore();
   }
