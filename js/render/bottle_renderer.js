@@ -29,11 +29,8 @@ export class BottleRenderer {
 
     const halfW = w / 2;
     const halfH = h / 2;
-
-    const outerRx = halfW * 0.90;
-    const innerRx = halfW * 0.81;
-    const outerBotY = halfH - h * 0.05;
-    const innerBotY = halfH - h * 0.088;
+    const geometry = this.getBottleGeometry(b, w, h);
+    const { outerRx, innerRx, outerBotY, innerBotY } = geometry;
 
     // =========================================================================
     // 阶段 A: 桌面 3D 粗麻布软垫底座 (锚定在桌面 rawBaseY，无论瓶子悬空或飞走永远在桌面)
@@ -56,8 +53,8 @@ export class BottleRenderer {
     ctx.save();
     // 刚体逆向运动学 (Lip-Anchored Pose): 倒水时围绕精准对位瓶嘴旋转
     if (b.isFlying && Number.isFinite(b.lipX) && Number.isFinite(b.lipY)) {
-      const localLipX = (b.pourDir || 1) * (outerRx * 0.38);
-      const localLipY = -halfH + h * 0.05;
+      const localLipX = (b.pourDir || 1) * Math.abs(geometry.mapX(62));
+      const localLipY = geometry.mapY(9.2 + geometry.neckOffset);
       ctx.translate(b.lipX, b.lipY);
       if (b.rotation) ctx.rotate(b.rotation);
       if (b.scale && b.scale !== 1) ctx.scale(b.scale, b.scale);
@@ -69,31 +66,31 @@ export class BottleRenderer {
     }
 
     // 1. 瓶身外壁微光玻璃背板
-    this.renderGlassBackdrop(ctx, outerRx, -halfH, w, h);
+    this.renderGlassBackdrop(ctx, geometry);
 
     // 2. 左右两侧壁真实厚度垂直折射光带 (体现实体玻璃厚度纵深)
-    this.renderSideWallRefractionBars(ctx, outerRx, -halfH, w, h, innerBotY);
+    this.renderSideWallRefractionBars(ctx, geometry);
 
     // 3. 瓶底内壁椭圆台面 (立体纵深内底)
-    this.renderInnerBaseFloor(ctx, innerRx, innerBotY);
+    this.renderInnerBaseFloor(ctx, geometry);
 
     // 4. 构建内腔路径并裁切 (绘制充盈液体与内壁高光)
     ctx.save();
-    this.createBottleInnerPath(ctx, innerRx, innerBotY, -halfH, w, h);
+    this.createBottleInnerPath(ctx, geometry);
     ctx.clip();
 
     // 绘制 2.5D 液体圆柱体体积 (柱面+顶面椭圆+底部透视弧+注水微晃)
-    this.renderLiquidLayers(ctx, b, innerRx, innerBotY, -halfH, w, h);
+    this.renderLiquidLayers(ctx, b, geometry);
 
     // 瓶内高光柱与纵深折射
-    this.renderInnerWallRefraction(ctx, innerRx, -halfH, w, h);
+    this.renderInnerWallRefraction(ctx, geometry);
     ctx.restore();
 
     // 5. 3D 沉底厚玻璃高折射层与月牙焦散弧 (晶莹剔透水晶底)
-    this.renderThickGlassBase(ctx, outerRx, innerRx, outerBotY, innerBotY);
+    this.renderThickGlassBase(ctx, geometry);
 
     // 6. 外壁高光玻璃壳、溜肩反光弧与圆润瓶口
-    this.renderGlassBodyAndNeck(ctx, outerRx, outerBotY, -halfH, w, h, isSelected, b.isGiantCat);
+    this.renderGlassBodyAndNeck(ctx, geometry, isSelected, b.isGiantCat);
 
     // 7. 特殊机制 (🎬 广告场记板、色环契约、冰晶、锁扣、流沙炸弹等)
     this.renderSpecialMechanics(ctx, b, -halfW, -halfH, w, h);
@@ -106,104 +103,199 @@ export class BottleRenderer {
     ctx.restore();
   }
 
+  /** Map the prototype SVG's 67×204 bottle geometry into the bottle's Canvas box. */
+  getBottleGeometry(b, w, h) {
+    const maxCap = b.maxCap || 4;
+    const isTall = maxCap === 8 && !b.isGiantCat;
+    const vbW = isTall ? 70 : 67;
+    const vbH = isTall ? 298 : 204;
+    const centerY = isTall ? 152 : 105;
+    const sx = w / vbW;
+    const sy = h / vbH;
+    const bottomY = isTall ? 288 : 193;
+    const neckOffset = Number.isFinite(b.neckOffsetY)
+      ? b.neckOffsetY
+      : (maxCap === 2 ? 80 : 0);
+    const mapX = (x) => (x - 50) * sx;
+    const mapY = (y) => (y - centerY) * sy;
+
+    return {
+      w, h, sx, sy, mapX, mapY, centerY, bottomY, neckOffset,
+      maxCap,
+      layerH: maxCap === 8 ? 29.8 : maxCap === 6 ? 24.2 : maxCap === 2 ? 33.5 : 36.2,
+      layerRy: maxCap === 8 ? 7.6 : 7.8,
+      outerRx: 32.2 * sx,
+      innerRx: 30.2 * sx,
+      outerBotY: mapY(bottomY + 2.4),
+      innerBotY: mapY(bottomY - 1.8),
+      shoulderTopY: mapY(26 + neckOffset),
+      shoulderBottomY: mapY(55 + neckOffset),
+      bodyTopY: mapY(46.5 + neckOffset)
+    };
+  }
+
   /**
    * 1. 100% 复刻原型的 3D 粗麻布编织软垫底座 (无论瓶子浮空与否，稳停在原桌面)
    */
   renderBurlapCoaster(ctx, b, halfW, halfH, liftDist = 0, outerBotY = 0) {
     const isDarkStar = b.corked || b.isGiantCat;
     const hasBeadedRing = (b.special && b.special !== SPECIAL_TYPES.NONE) || (b.mysteryCount && b.mysteryCount > 0);
-    const coasterW = halfW * 2.3;
+    const coasterW = halfW * 2.4;
+    const scale = coasterW / 100;
     const coasterTopY = outerBotY;
 
     ctx.save();
-
-    // A. 原图标志性左下方暖赤陶色柔和地面投影 (rotate -5deg, terracottaShadowGrad)
     const effectiveLift = b.isFlying ? Math.max(liftDist, 45) : liftDist;
     const shadowAlpha = Math.max(0.06, (1 - effectiveLift / 140) * 0.32);
     ctx.save();
-    ctx.translate(-2, coasterTopY + 10);
-    ctx.rotate(-0.08); // 约 -5 度
-    const shadowGrad = ctx.createRadialGradient(0, 0, 4, 0, 0, coasterW * 0.52);
-    shadowGrad.addColorStop(0.00, `rgba(142, 60, 8, ${shadowAlpha})`);
-    shadowGrad.addColorStop(0.65, `rgba(110, 42, 6, ${shadowAlpha * 0.5})`);
-    shadowGrad.addColorStop(1.00, 'rgba(110, 42, 6, 0.0)');
+    ctx.translate(-2, coasterTopY - 7.5 * scale + effectiveLift * 0.03);
+    ctx.scale(scale, scale);
+    ctx.rotate(-0.08);
+    const shadowGrad = ctx.createRadialGradient(42, 34, 3, 42, 34, 48 + effectiveLift * 0.2);
+    shadowGrad.addColorStop(0, `rgba(142, 60, 8, ${shadowAlpha})`);
+    shadowGrad.addColorStop(0.62, `rgba(110, 42, 6, ${shadowAlpha * 0.45})`);
+    shadowGrad.addColorStop(1, 'rgba(110, 42, 6, 0)');
     ctx.fillStyle = shadowGrad;
     ctx.beginPath();
-    ctx.ellipse(0, 0, coasterW * (0.46 + effectiveLift * 0.002), 7.0 + effectiveLift * 0.03, 0, 0, Math.PI * 2);
+    ctx.ellipse(42, 34, 45 + effectiveLift * 0.15, 11.5 + effectiveLift * 0.06, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
-    // B. 3D 软垫厚实侧面 (上亮金棕 -> 下柔和深棕)
-    const sideGrad = ctx.createLinearGradient(0, coasterTopY - 2, 0, coasterTopY + 16);
+    // Match the prototype's pillow-shaped pad silhouette and its stitched woven surface.
+    ctx.translate(0, coasterTopY - 7.5 * scale);
+    ctx.scale(scale, scale);
+    ctx.lineJoin = 'round';
+
+    const sidePath = () => {
+      ctx.beginPath();
+      ctx.moveTo(11, 19.5);
+      ctx.bezierCurveTo(11, 13, 25, 10, 50, 10);
+      ctx.bezierCurveTo(75, 10, 89, 13, 89, 19.5);
+      ctx.lineTo(87.5, 27.5);
+      ctx.bezierCurveTo(86, 35.5, 72, 39.5, 50, 39.5);
+      ctx.bezierCurveTo(28, 39.5, 14, 35.5, 12.5, 27.5);
+      ctx.closePath();
+    };
+    const topPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(50, 7.5);
+      ctx.bezierCurveTo(76, 7.5, 89, 11.5, 89, 19.2);
+      ctx.bezierCurveTo(89, 26.8, 76, 31.2, 50, 31.2);
+      ctx.bezierCurveTo(24, 31.2, 11, 26.8, 11, 19.2);
+      ctx.bezierCurveTo(11, 11.5, 24, 7.5, 50, 7.5);
+      ctx.closePath();
+    };
+
+    const sideGrad = ctx.createLinearGradient(0, 10, 0, 40);
     if (isDarkStar) {
-      sideGrad.addColorStop(0.0, '#5a421b');
-      sideGrad.addColorStop(1.0, '#2c1e09');
+      sideGrad.addColorStop(0, '#786032');
+      sideGrad.addColorStop(0.48, '#503b1d');
+      sideGrad.addColorStop(1, '#2c1e09');
     } else {
-      sideGrad.addColorStop(0.0, '#bd945c');
-      sideGrad.addColorStop(0.4, '#98703d');
-      sideGrad.addColorStop(1.0, '#60451f');
+      sideGrad.addColorStop(0, '#d5b77b');
+      sideGrad.addColorStop(0.4, '#a17b45');
+      sideGrad.addColorStop(1, '#60451f');
     }
     ctx.fillStyle = sideGrad;
-    ctx.beginPath();
-    ctx.ellipse(0, coasterTopY + 4.8, coasterW * 0.44, 6.2, 0, 0, Math.PI * 2);
+    sidePath();
     ctx.fill();
 
-    // C. 3D 软垫饱满拱起顶面 (微突起亮光台面，清爽通透暖金米白)
-    const topGrad = ctx.createLinearGradient(0, coasterTopY - 6, 0, coasterTopY + 4);
+    // Crossed fibers add the soft burlap grain visible in the SVG prototype.
+    ctx.save();
+    sidePath();
+    ctx.clip();
+    ctx.lineWidth = 0.55;
+    for (let y = 13; y < 40; y += 3.6) {
+      ctx.strokeStyle = (Math.round(y * 10) % 2)
+        ? 'rgba(255, 232, 184, 0.16)' : 'rgba(48, 31, 12, 0.14)';
+      ctx.beginPath();
+      ctx.moveTo(7, y);
+      ctx.lineTo(93, y + 0.8);
+      ctx.stroke();
+    }
+    for (let x = 14; x < 90; x += 4.2) {
+      ctx.strokeStyle = (Math.round(x * 10) % 2)
+        ? 'rgba(255, 236, 194, 0.12)' : 'rgba(42, 28, 12, 0.12)';
+      ctx.beginPath();
+      ctx.moveTo(x, 8);
+      ctx.lineTo(x - 1.2, 42);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    const topGrad = ctx.createLinearGradient(0, 7.5, 0, 31.2);
     if (isDarkStar) {
-      topGrad.addColorStop(0.0, '#8c6b32');
-      topGrad.addColorStop(1.0, '#4e3b1c');
+      topGrad.addColorStop(0, '#a17e3b');
+      topGrad.addColorStop(1, '#4e3b1c');
     } else {
-      topGrad.addColorStop(0.0, '#e1d0ae');
-      topGrad.addColorStop(0.5, '#c4ad82');
-      topGrad.addColorStop(1.0, '#9b7c50');
+      topGrad.addColorStop(0, '#ead8ae');
+      topGrad.addColorStop(0.48, '#c4ad82');
+      topGrad.addColorStop(1, '#927448');
     }
     ctx.fillStyle = topGrad;
-    ctx.beginPath();
-    ctx.ellipse(0, coasterTopY, coasterW * 0.43, 5.4, 0, 0, Math.PI * 2);
+    topPath();
     ctx.fill();
 
-    // 顶缘极细亮金色高光线
-    ctx.strokeStyle = isDarkStar ? 'rgba(255, 220, 160, 0.45)' : 'rgba(255, 243, 214, 0.62)';
-    ctx.lineWidth = 1.0;
+    ctx.save();
+    topPath();
+    ctx.clip();
+    ctx.lineWidth = 0.62;
+    for (let y = 9; y < 31; y += 3.4) {
+      ctx.strokeStyle = (Math.round(y * 10) % 2)
+        ? 'rgba(255, 252, 230, 0.32)' : 'rgba(86, 64, 32, 0.16)';
+      ctx.beginPath();
+      ctx.moveTo(8, y);
+      ctx.lineTo(92, y + 0.5);
+      ctx.stroke();
+    }
+    for (let x = 13; x < 90; x += 4.0) {
+      ctx.strokeStyle = (Math.round(x * 10) % 2)
+        ? 'rgba(255, 255, 239, 0.26)' : 'rgba(91, 69, 36, 0.14)';
+      ctx.beginPath();
+      ctx.moveTo(x, 6);
+      ctx.lineTo(x - 0.8, 33);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    topPath();
+    ctx.strokeStyle = isDarkStar ? 'rgba(255, 220, 160, 0.45)' : 'rgba(255, 243, 214, 0.68)';
+    ctx.lineWidth = 1.1;
     ctx.stroke();
 
-    // D. 软垫表面接触暗影 (Contact AO): 瓶底在原位时紧实吸附，浮空起飞时彻底清除黑斑
     const contactAlpha = b.isFlying ? 0 : Math.max(0, (1 - liftDist / 20) * 0.45);
     if (contactAlpha > 0.01) {
-      const aoGrad = ctx.createRadialGradient(0, coasterTopY + 0.5, 2, 0, coasterTopY + 0.5, halfW * 0.82);
+      const aoGrad = ctx.createRadialGradient(50, 18.5, 2, 50, 18.5, 30);
       aoGrad.addColorStop(0.0, `rgba(45, 18, 4, ${contactAlpha})`);
       aoGrad.addColorStop(0.6, `rgba(45, 18, 4, ${contactAlpha * 0.4})`);
       aoGrad.addColorStop(1.0, 'rgba(45, 18, 4, 0.0)');
       ctx.fillStyle = aoGrad;
       ctx.beginPath();
-      ctx.ellipse(0, coasterTopY + 0.5, halfW * 0.78, 3.8, 0, 0, Math.PI * 2);
+      ctx.ellipse(50, 18.5, 28, 6.2, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // E. 软垫表面细腻饰纹：特殊瓶白色双圈珠点圆环，满瓶3D发光金星
     if (isDarkStar) {
       ctx.fillStyle = '#ffee44';
       ctx.strokeStyle = '#d97706';
-      ctx.lineWidth = 1.4;
+      ctx.lineWidth = 1.6;
       ctx.beginPath();
-      this.drawStar(ctx, 0, coasterTopY, 5, 6.2, 2.7);
+      this.drawStar(ctx, 50, 20, 7.2, 14.5, 4.4);
       ctx.fill();
       ctx.stroke();
     } else if (hasBeadedRing) {
-      // 原图同款高定白色双圈珠点圆环
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.88)';
-      ctx.lineWidth = 1.4;
+      ctx.lineWidth = 1.9;
       ctx.setLineDash([2, 3]);
       ctx.beginPath();
-      ctx.ellipse(0, coasterTopY, coasterW * 0.32, 4.4, 0, 0, Math.PI * 2);
+      ctx.ellipse(50, 19.5, 22, 6.2, 0, 0, Math.PI * 2);
       ctx.stroke();
 
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
-      ctx.lineWidth = 1.1;
+      ctx.lineWidth = 1.5;
       ctx.setLineDash([1.5, 2.5]);
       ctx.beginPath();
-      ctx.ellipse(0, coasterTopY, coasterW * 0.24, 3.2, 0, 0, Math.PI * 2);
+      ctx.ellipse(50, 19.5, 17, 4.6, 0, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -214,50 +306,59 @@ export class BottleRenderer {
   /**
    * 瓶身微光背景背板 (100% 对齐 demo.html glassBodyGrad)
    */
-  renderGlassBackdrop(ctx, rx, topY, w, h) {
-    const bodyTop = topY + h * 0.22;
-    const bodyH = h * 0.72;
-
-    const bgGrad = ctx.createLinearGradient(-rx, 0, rx, 0);
+  renderGlassBackdrop(ctx, geometry) {
+    const { outerRx, outerBotY, w, h } = geometry;
+    const bgGrad = ctx.createLinearGradient(-outerRx, 0, outerRx, 0);
     bgGrad.addColorStop(0.00, 'rgba(255, 252, 242, 0.24)');
     bgGrad.addColorStop(0.22, 'rgba(255, 248, 232, 0.09)');
     bgGrad.addColorStop(0.58, 'rgba(255, 246, 225, 0.06)');
     bgGrad.addColorStop(0.84, 'rgba(255, 254, 248, 0.26)');
     bgGrad.addColorStop(1.00, 'rgba(255, 250, 235, 0.20)');
 
+    ctx.save();
+    this.createBottleOuterPath(ctx, geometry);
+    ctx.clip();
     ctx.fillStyle = bgGrad;
-    ctx.fillRect(-rx, bodyTop, rx * 2, bodyH);
+    ctx.fillRect(-outerRx, -h / 2, outerRx * 2, h);
+    ctx.restore();
   }
 
   /**
    * 2. 左右两侧壁真实厚度垂直折射光带 (贯穿瓶身，空瓶与满瓶皆具立体纵深)
    */
-  renderSideWallRefractionBars(ctx, rx, topY, w, h, innerBotY) {
-    const shoulderBot = topY + h * 0.26;
+  renderSideWallRefractionBars(ctx, geometry) {
+    const { mapX, mapY, sx, sy, innerBotY } = geometry;
+    const shoulderBot = mapY(55 + geometry.neckOffset);
     const barH = innerBotY - shoulderBot;
-    const barW = 2.4;
+    const barW = 2.4 * sx;
 
-    // 左侧厚度折射带 (glassWallSideRefractL)
-    const leftGrad = ctx.createLinearGradient(-rx, 0, -rx + barW, 0);
+    ctx.save();
+    this.createBottleOuterPath(ctx, geometry);
+    ctx.clip();
+
+    const leftX = mapX(17.8);
+    const rightX = mapX(79.8);
+    const leftGrad = ctx.createLinearGradient(leftX, 0, leftX + barW, 0);
     leftGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0.42)');
     leftGrad.addColorStop(0.6, 'rgba(175, 220, 255, 0.16)');
     leftGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
     ctx.fillStyle = leftGrad;
-    ctx.fillRect(-rx, shoulderBot, barW, barH);
+    ctx.fillRect(leftX, shoulderBot, barW, barH);
 
-    // 右侧厚度折射带 (glassWallSideRefractR)
-    const rightGrad = ctx.createLinearGradient(rx - barW, 0, rx, 0);
+    const rightGrad = ctx.createLinearGradient(rightX, 0, rightX + barW, 0);
     rightGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0.0)');
     rightGrad.addColorStop(0.4, 'rgba(175, 220, 255, 0.18)');
     rightGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0.48)');
     ctx.fillStyle = rightGrad;
-    ctx.fillRect(rx - barW, shoulderBot, barW, barH);
+    ctx.fillRect(rightX, shoulderBot, barW, barH);
+    ctx.restore();
   }
 
   /**
    * 3. 瓶底内壁椭圆台面 (立体纵深内底)
    */
-  renderInnerBaseFloor(ctx, innerRx, innerBotY) {
+  renderInnerBaseFloor(ctx, geometry) {
+    const { innerRx, innerBotY, sx, sy } = geometry;
     ctx.save();
     const floorGrad = ctx.createLinearGradient(-innerRx, 0, innerRx, 0);
     floorGrad.addColorStop(0.00, 'rgba(255, 255, 255, 0.55)');
@@ -268,9 +369,9 @@ export class BottleRenderer {
 
     ctx.fillStyle = 'rgba(22, 32, 58, 0.16)';
     ctx.strokeStyle = floorGrad;
-    ctx.lineWidth = 1.15;
+    ctx.lineWidth = 1.15 * Math.min(sx, sy);
     ctx.beginPath();
-    ctx.ellipse(0, innerBotY, innerRx, 5.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, innerBotY, innerRx, 6.6 * sy, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
     ctx.restore();
@@ -279,59 +380,55 @@ export class BottleRenderer {
   /**
    * 构造内腔三次贝塞尔圆润溜肩与透视底弧 Path (裁切液体)
    */
-  createBottleInnerPath(ctx, innerRx, innerBotY, topY, w, h) {
-    const neckHalfW = innerRx * 0.38;
-    const neckTop = topY + h * 0.05;
-    const shoulderTop = topY + h * 0.12;
-    const shoulderBot = topY + h * 0.25;
-
+  createBottleInnerPath(ctx, geometry) {
+    const { mapX: x, mapY: y, innerRx, innerBotY, neckOffset } = geometry;
+    const lipTop = 9.2 + neckOffset;
+    const shoulderTop = 26 + neckOffset;
+    const shoulderBot = 55 + neckOffset;
     ctx.beginPath();
-    ctx.moveTo(-neckHalfW, neckTop);
-    ctx.lineTo(neckHalfW, neckTop);
-    ctx.lineTo(neckHalfW, shoulderTop);
-    ctx.bezierCurveTo(neckHalfW * 1.05, shoulderTop + h * 0.03, innerRx, shoulderTop + h * 0.07, innerRx, shoulderBot);
+    ctx.moveTo(x(37.2), y(lipTop));
+    ctx.lineTo(x(62.8), y(lipTop));
+    ctx.lineTo(x(62.8), y(shoulderTop));
+    ctx.bezierCurveTo(x(74.8), y(shoulderTop + 4.2), x(80.2), y(shoulderTop + 13), x(80.2), y(shoulderBot));
     ctx.lineTo(innerRx, innerBotY);
-    // 2.5D 透视底弧 (向下方拱出)
-    ctx.ellipse(0, innerBotY, innerRx, 5.6, 0, 0, Math.PI, false);
-    ctx.lineTo(-innerRx, shoulderBot);
-    ctx.bezierCurveTo(-innerRx, shoulderTop + h * 0.07, -neckHalfW * 1.05, shoulderTop + h * 0.03, -neckHalfW, shoulderTop);
+    ctx.ellipse(0, innerBotY, innerRx, 7.5 * geometry.sy, 0, 0, Math.PI, false);
+    ctx.lineTo(x(19.8), y(shoulderBot));
+    ctx.bezierCurveTo(x(19.8), y(shoulderTop + 13), x(25.2), y(shoulderTop + 4.2), x(37.2), y(shoulderTop));
     ctx.closePath();
   }
 
   /**
    * 构造外壁圆润溜肩与透视底弧 Path (外边框与高光壳)
    */
-  createBottleOuterPath(ctx, outerRx, outerBotY, topY, w, h) {
-    const neckHalfW = outerRx * 0.38;
-    const neckTop = topY + h * 0.05;
-    const shoulderTop = topY + h * 0.12;
-    const shoulderBot = topY + h * 0.25;
-
+  createBottleOuterPath(ctx, geometry) {
+    const { mapX: x, mapY: y, outerBotY, neckOffset } = geometry;
+    const neckStemTop = 20 + neckOffset;
+    const shoulderTop = 26 + neckOffset;
+    const shoulderBot = 55 + neckOffset;
     ctx.beginPath();
-    ctx.moveTo(-neckHalfW, neckTop);
-    ctx.lineTo(neckHalfW, neckTop);
-    ctx.lineTo(neckHalfW, shoulderTop);
-    ctx.bezierCurveTo(neckHalfW * 1.05, shoulderTop + h * 0.03, outerRx, shoulderTop + h * 0.07, outerRx, shoulderBot);
-    ctx.lineTo(outerRx, outerBotY);
-    // 2.5D 外底透视底弧
-    ctx.ellipse(0, outerBotY, outerRx, 6.8, 0, 0, Math.PI, false);
-    ctx.lineTo(-outerRx, shoulderBot);
-    ctx.bezierCurveTo(-outerRx, shoulderTop + h * 0.07, -neckHalfW * 1.05, shoulderTop + h * 0.03, -neckHalfW, shoulderTop);
+    ctx.moveTo(x(36.4), y(neckStemTop));
+    ctx.lineTo(x(63.6), y(neckStemTop));
+    ctx.lineTo(x(63.6), y(shoulderTop));
+    ctx.bezierCurveTo(x(76.4), y(shoulderTop + 3.8), x(82.2), y(shoulderTop + 12.5), x(82.2), y(shoulderBot));
+    ctx.lineTo(x(82.2), outerBotY);
+    ctx.ellipse(0, outerBotY, 32.2 * geometry.sx, 8.8 * geometry.sy, 0, 0, Math.PI, false);
+    ctx.lineTo(x(17.8), y(shoulderBot));
+    ctx.bezierCurveTo(x(17.8), y(shoulderTop + 12.5), x(23.6), y(shoulderTop + 3.8), x(36.4), y(shoulderTop));
     ctx.closePath();
   }
 
   /**
    * 4. 绘制 2.5D 药水层 (4区 PBR 体积圆柱体 + 拱起顶面椭圆亮唇 + 倾角重力水平面)
    */
-  renderLiquidLayers(ctx, b, innerRx, innerBotY, topY, w, h) {
-    const halfW = w / 2;
-    const halfH = h / 2;
+  renderLiquidLayers(ctx, b, geometry) {
+    const { innerRx, innerBotY, w, h, sy, mapY, bottomY, layerH: sourceLayerH, layerRy, neckOffset } = geometry;
     const layers = b.layers;
     const maxCap = b.maxCap || 4;
-    const fullTopY = topY + h * 0.24;
-    const totalLiquidH = innerBotY - fullTopY;
-    const layerH = totalLiquidH / maxCap;
-    const ry = 5.6;
+    const liquidBottomY = mapY(bottomY);
+    const fullTopY = mapY(bottomY - maxCap * sourceLayerH);
+    const totalLiquidH = liquidBottomY - fullTopY;
+    const layerH = sourceLayerH * sy;
+    const ry = layerRy * sy;
 
     // 动态倾角
     const rotRad = b.rotation || 0;
@@ -352,7 +449,7 @@ export class BottleRenderer {
         topLayerDrainScale = Math.max(0.02, 1 - b.drainRatio);
       }
 
-      let curBottom = innerBotY;
+      let curBottom = liquidBottomY;
 
       for (let i = 0; i < drawLayers.length; i++) {
         const colorKey = drawLayers[i];
@@ -482,12 +579,11 @@ export class BottleRenderer {
 
     // 瓶身内腔在世界重力方向 (+Y 为下) 的最低点与瓶嘴出水口
     // 变换公式：xg = x*cosR + y*sinR, yg = -x*sinR + y*cosR
-    const yBotG = innerBotY * cosR + innerRx * Math.abs(sinR);
+    const yBotG = liquidBottomY * cosR + innerRx * Math.abs(sinR);
 
     // 瓶嘴在瓶身局部坐标为 (pourDir * innerRx * 0.38, topY + h * 0.05)
-    const lipRx = innerRx * 0.38;
-    const lipLocalX = pourDir * lipRx;
-    const lipLocalY = topY + h * 0.05;
+    const lipLocalX = pourDir * Math.abs(geometry.mapX(62));
+    const lipLocalY = mapY(9.2 + neckOffset);
     const yLipG = -lipLocalX * sinR + lipLocalY * cosR;
 
     // 出水最大重力深度
@@ -564,63 +660,105 @@ export class BottleRenderer {
   /**
    * 5. 瓶内壁通透高光柱与纵深折射
    */
-  renderInnerWallRefraction(ctx, rx, topY, w, h) {
-    const bodyTop = topY + h * 0.22;
-    const bodyH = h * 0.70;
+  renderInnerWallRefraction(ctx, geometry) {
+    const { mapX: x, mapY: y, sx, sy, innerBotY, neckOffset } = geometry;
+    const pillarTop = y(46.5 + neckOffset);
+    const pillarH = innerBotY - pillarTop;
 
-    // 左侧垂直高光柱 (leftWallSheen)
-    const leftGrad = ctx.createLinearGradient(-rx, 0, -rx + 7, 0);
-    leftGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0.42)');
-    leftGrad.addColorStop(0.6, 'rgba(255, 250, 235, 0.14)');
-    leftGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+    const dome = ctx.createRadialGradient(x(34), y(37.5 + neckOffset), 1, x(34), y(37.5 + neckOffset), 13.5 * sx);
+    dome.addColorStop(0, 'rgba(255, 255, 255, 0.42)');
+    dome.addColorStop(0.58, 'rgba(255, 250, 235, 0.14)');
+    dome.addColorStop(1, 'rgba(255, 250, 235, 0)');
+    ctx.fillStyle = dome;
+    ctx.beginPath();
+    ctx.ellipse(x(34), y(37.5 + neckOffset), 13.5 * sx, 9.2 * sy, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const leftGrad = ctx.createLinearGradient(0, pillarTop, 0, pillarTop + pillarH);
+    leftGrad.addColorStop(0, 'rgba(255, 255, 255, 0.28)');
+    leftGrad.addColorStop(0.65, 'rgba(255, 250, 235, 0.10)');
+    leftGrad.addColorStop(1, 'rgba(255, 250, 235, 0)');
     ctx.fillStyle = leftGrad;
-    ctx.fillRect(-rx + 1, bodyTop, 6, bodyH);
+    ctx.beginPath();
+    ctx.roundRect(x(21), pillarTop, 5.5 * sx, pillarH, 2.7 * sx);
+    ctx.fill();
 
-    // 右侧修长高光柱 (rightPillarSheen)
-    const rightGrad = ctx.createLinearGradient(rx - 9, 0, rx, 0);
-    rightGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0.0)');
-    rightGrad.addColorStop(0.4, 'rgba(255, 252, 240, 0.24)');
-    rightGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0.42)');
+    const shoulderGrad = ctx.createLinearGradient(x(53.8), y(28.2 + neckOffset), x(74.5), y(43.2 + neckOffset));
+    shoulderGrad.addColorStop(0, 'rgba(255, 255, 255, 0.52)');
+    shoulderGrad.addColorStop(0.5, 'rgba(255, 253, 245, 0.62)');
+    shoulderGrad.addColorStop(0.9, 'rgba(255, 248, 225, 0.30)');
+    shoulderGrad.addColorStop(1, 'rgba(255, 248, 225, 0.05)');
+    ctx.fillStyle = shoulderGrad;
+    ctx.beginPath();
+    ctx.moveTo(x(53.8), y(28.2 + neckOffset));
+    ctx.bezierCurveTo(x(64.8), y(30.2 + neckOffset), x(72), y(35.5 + neckOffset), x(74.5), y(42.8 + neckOffset));
+    ctx.lineTo(x(62.5), y(43.2 + neckOffset));
+    ctx.bezierCurveTo(x(60.6), y(36.5 + neckOffset), x(56.8), y(31.5 + neckOffset), x(51.2), y(29.8 + neckOffset));
+    ctx.closePath();
+    ctx.fill();
+
+    const rightGrad = ctx.createLinearGradient(0, pillarTop, 0, pillarTop + pillarH);
+    rightGrad.addColorStop(0, 'rgba(255, 255, 255, 0.38)');
+    rightGrad.addColorStop(0.45, 'rgba(255, 252, 240, 0.22)');
+    rightGrad.addColorStop(0.85, 'rgba(255, 248, 225, 0.08)');
+    rightGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
     ctx.fillStyle = rightGrad;
-    ctx.fillRect(rx - 8, bodyTop, 8, bodyH);
+    ctx.beginPath();
+    ctx.roundRect(x(63), pillarTop, 11.4 * sx, pillarH, 2.4 * sx);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(225, 242, 255, 0.65)';
+    ctx.lineWidth = 1.5 * Math.min(sx, sy);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x(65.2), y(29.8 + neckOffset));
+    ctx.bezierCurveTo(x(74.2), y(34.2 + neckOffset), x(78), y(40.2 + neckOffset), x(78.6), y(47.5 + neckOffset));
+    ctx.stroke();
   }
 
   /**
    * 6. 3D 沉底厚玻璃高折射层与月牙焦散弧 (100% 对齐 demo.html baseCushionGrad)
    */
-  renderThickGlassBase(ctx, outerRx, innerRx, outerBotY, innerBotY) {
+  renderThickGlassBase(ctx, geometry) {
     ctx.save();
+    const { mapX: x, mapY: y, sx, sy, outerBotY, innerBotY } = geometry;
 
-    // 1. 沉底厚玻璃高折射层 (晶莹水晶冰蓝高折射，杜绝脏暗深圈)
-    const baseGrad = ctx.createLinearGradient(-outerRx, innerBotY, outerRx, outerBotY + 4);
-    baseGrad.addColorStop(0.00, 'rgba(255, 252, 244, 0.62)');
-    baseGrad.addColorStop(0.18, 'rgba(235, 225, 205, 0.44)');
-    baseGrad.addColorStop(0.38, 'rgba(192, 169, 132, 0.28)');
-    baseGrad.addColorStop(0.58, 'rgba(168, 144, 109, 0.26)');
-    baseGrad.addColorStop(0.80, 'rgba(231, 218, 192, 0.48)');
-    baseGrad.addColorStop(1.00, 'rgba(255, 250, 237, 0.64)');
+    const outerRx = 32.2 * sx;
+    const innerRx = 30.2 * sx;
+    const baseGrad = ctx.createLinearGradient(-outerRx, 0, outerRx, 0);
+    baseGrad.addColorStop(0.00, 'rgba(255, 252, 240, 0.62)');
+    baseGrad.addColorStop(0.14, 'rgba(165, 215, 255, 0.34)');
+    baseGrad.addColorStop(0.32, 'rgba(28, 36, 58, 0.44)');
+    baseGrad.addColorStop(0.52, 'rgba(18, 26, 48, 0.52)');
+    baseGrad.addColorStop(0.72, 'rgba(42, 56, 88, 0.38)');
+    baseGrad.addColorStop(0.88, 'rgba(195, 232, 255, 0.58)');
+    baseGrad.addColorStop(1.00, 'rgba(255, 252, 240, 0.68)');
 
     ctx.fillStyle = baseGrad;
     ctx.beginPath();
-    // 从内底向右下到左
-    ctx.ellipse(0, innerBotY, innerRx, 5.6, 0, 0, Math.PI, false);
-    ctx.lineTo(-outerRx, outerBotY);
-    // 外底向右 (逆时针反转连接)
-    ctx.ellipse(0, outerBotY, outerRx, 6.8, 0, Math.PI, 0, true);
+    ctx.moveTo(x(19.6), innerBotY);
+    ctx.ellipse(0, innerBotY, 30.4 * sx, 7.5 * sy, 0, Math.PI, Math.PI * 2, false);
+    ctx.lineTo(x(82.2), outerBotY);
+    ctx.ellipse(0, outerBotY, 32.2 * sx, 8.8 * sy, 0, 0, Math.PI, false);
     ctx.closePath();
     ctx.fill();
 
-    // 2. 厚底玻璃内部月牙形焦散反光弧 (glassBaseRimHighlight)
-    ctx.strokeStyle = 'rgba(255, 247, 226, 0.72)';
-    ctx.lineWidth = 1.35;
+    const rim = ctx.createLinearGradient(-outerRx, 0, outerRx, 0);
+    rim.addColorStop(0, 'rgba(255, 255, 255, 0.15)');
+    rim.addColorStop(0.18, 'rgba(255, 255, 255, 0.78)');
+    rim.addColorStop(0.5, 'rgba(190, 230, 255, 0.42)');
+    rim.addColorStop(0.82, 'rgba(255, 255, 255, 0.88)');
+    rim.addColorStop(1, 'rgba(255, 255, 255, 0.20)');
+    ctx.strokeStyle = rim;
+    ctx.lineWidth = 1.55 * Math.min(sx, sy);
     ctx.beginPath();
-    ctx.ellipse(0, outerBotY - 0.5, outerRx * 0.94, 6.2, 0, 0.1 * Math.PI, 0.9 * Math.PI);
+    ctx.ellipse(0, y(geometry.bottomY + 2.1), 31.6 * sx, 8.6 * sy, 0, Math.PI, 0, true);
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(211, 183, 139, 0.55)';
-    ctx.lineWidth = 1.0;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.52)';
+    ctx.lineWidth = 0.95 * Math.min(sx, sy);
     ctx.beginPath();
-    ctx.ellipse(0, innerBotY + 1.0, innerRx * 0.92, 4.8, 0, 0.1 * Math.PI, 0.9 * Math.PI);
+    ctx.ellipse(0, y(geometry.bottomY + 4.8), 25 * sx, 5.2 * sy, 0, Math.PI, 0, true);
     ctx.stroke();
 
     ctx.restore();
@@ -629,89 +767,123 @@ export class BottleRenderer {
   /**
    * 7. 外壁高光玻璃壳、溜肩反光斑与圆润瓶口
    */
-  renderGlassBodyAndNeck(ctx, outerRx, outerBotY, topY, w, h, isSelected, isGiantCat) {
-    const neckHalfW = outerRx * 0.38;
-    const neckTop = topY + h * 0.05;
-
+  renderGlassBodyAndNeck(ctx, geometry, isSelected, isGiantCat) {
+    const { mapX: x, mapY: y, sx, sy, neckOffset } = geometry;
+    const neckY = (value) => y(value + neckOffset);
+    const scale = Math.min(sx, sy);
     ctx.save();
 
-    // A. 瓶身外轮廓微光描边 (naturalRimGrad)
-    this.createBottleOuterPath(ctx, outerRx, outerBotY, topY, w, h);
-    const rimGrad = ctx.createLinearGradient(0, topY, 0, outerBotY);
+    this.createBottleOuterPath(ctx, geometry);
+    const rimGrad = ctx.createLinearGradient(0, y(9.2 + neckOffset), 0, y(geometry.bottomY + 2.4));
     rimGrad.addColorStop(0.00, isSelected ? '#ffdf6b' : 'rgba(255, 255, 255, 0.85)');
     rimGrad.addColorStop(0.25, isSelected ? '#fde047' : 'rgba(255, 248, 225, 0.65)');
     rimGrad.addColorStop(0.65, isSelected ? '#facc15' : 'rgba(255, 255, 255, 0.48)');
     rimGrad.addColorStop(1.00, isSelected ? '#eab308' : 'rgba(255, 250, 235, 0.40)');
 
     ctx.strokeStyle = rimGrad;
-    ctx.lineWidth = isSelected ? 2.6 : 1.7;
+    ctx.lineWidth = (isSelected ? 2.6 : 1.7) * scale;
     ctx.stroke();
 
-    // B. 溜肩左侧柔和光斑 (leftShoulderDomeGrad)
-    const shoulderGlow = ctx.createRadialGradient(-w * 0.18, topY + h * 0.18, 2, -w * 0.18, topY + h * 0.18, 14);
-    shoulderGlow.addColorStop(0.0, 'rgba(255, 255, 255, 0.52)');
-    shoulderGlow.addColorStop(0.58, 'rgba(255, 250, 235, 0.18)');
-    shoulderGlow.addColorStop(1.0, 'rgba(255, 250, 235, 0.0)');
-    ctx.fillStyle = shoulderGlow;
+    // Tight glass neck and rounded double rim, matching the prototype SVG paths.
+    ctx.fillStyle = 'rgba(27, 67, 138, 0.32)';
     ctx.beginPath();
-    ctx.ellipse(-w * 0.18, topY + h * 0.18, 12, 8.5, 0, 0, Math.PI * 2);
+    ctx.moveTo(x(36), neckY(20.2));
+    ctx.quadraticCurveTo(x(37.2), neckY(23.2), x(36.4), neckY(26.2));
+    ctx.ellipse(0, neckY(26.2), 13.8 * sx, 2.7 * sy, 0, Math.PI, 0, true);
+    ctx.quadraticCurveTo(x(62.8), neckY(23.2), x(64), neckY(20.2));
+    ctx.closePath();
     ctx.fill();
 
-    // C. 右肩纤细修长反光弧 (shoulder-sheen)
-    ctx.strokeStyle = 'rgba(225, 242, 255, 0.72)';
-    ctx.lineWidth = 1.6;
-    ctx.lineCap = 'round';
+    ctx.fillStyle = 'rgba(120, 175, 255, 0.24)';
     ctx.beginPath();
-    ctx.arc(w * 0.18, topY + h * 0.20, 11, -Math.PI * 0.45, Math.PI * 0.12);
-    ctx.stroke();
+    ctx.ellipse(0, neckY(24.5), 10.4 * sx, 1.6 * sy, 0, 0, Math.PI * 2);
+    ctx.fill();
 
-    // D. 瓶口圆润唇圈 (neckLipGrad & neckTopRimGrad)
-    const lipGrad = ctx.createLinearGradient(-neckHalfW, 0, neckHalfW, 0);
+    ctx.strokeStyle = geometry.maxCap === 8 ? '#fde047' : '#4a80db';
+    ctx.globalAlpha = 0.88;
+    ctx.lineWidth = (geometry.maxCap === 8 ? 1.5 : 1.15) * scale;
+    ctx.beginPath();
+    ctx.ellipse(0, neckY(25.8), 13.4 * sx, 2.5 * sy, 0, 0, Math.PI);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    const lipGrad = ctx.createLinearGradient(x(31.4), 0, x(68.6), 0);
     lipGrad.addColorStop(0.00, 'rgba(255, 248, 230, 0.65)');
-    lipGrad.addColorStop(0.30, '#ffffff');
-    lipGrad.addColorStop(0.70, 'rgba(254, 243, 199, 0.75)');
-    lipGrad.addColorStop(1.00, '#ffffff');
+    lipGrad.addColorStop(0.18, 'rgba(255, 255, 255, 0.88)');
+    lipGrad.addColorStop(0.48, 'rgba(240, 225, 195, 0.42)');
+    lipGrad.addColorStop(0.76, 'rgba(255, 255, 255, 0.92)');
+    lipGrad.addColorStop(1.00, 'rgba(245, 230, 200, 0.68)');
 
     ctx.fillStyle = lipGrad;
+    ctx.strokeStyle = '#3b73cc';
+    ctx.lineWidth = 1 * scale;
     ctx.beginPath();
-    ctx.ellipse(0, neckTop, neckHalfW + 2.0, 3.8, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-    ctx.lineWidth = 1.1;
-    ctx.stroke();
-
-    // E. 瓶口内凹孔径 (深邃孔径深度感 mouthBoreGrad)
-    const mouthGrad = ctx.createLinearGradient(0, neckTop - 2, 0, neckTop + 3);
-    mouthGrad.addColorStop(0.0, 'rgba(180, 140, 85, 0.28)');
-    mouthGrad.addColorStop(0.6, 'rgba(255, 248, 230, 0.36)');
-    mouthGrad.addColorStop(1.0, 'rgba(255, 255, 255, 0.65)');
-    ctx.fillStyle = mouthGrad;
-    ctx.beginPath();
-    ctx.ellipse(0, neckTop + 0.3, neckHalfW * 0.65, 2.0, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Prototype bottles carry a small cool-blue glass collar at the mouth.
-    // The former white lip alone made every bottle look unfinished and flat.
-    const stopperW = neckHalfW * 2 + 3.5;
-    const stopperY = neckTop - 4.2;
-    const stopperGrad = ctx.createLinearGradient(0, stopperY, 0, neckTop + 2.5);
-    stopperGrad.addColorStop(0, 'rgba(225, 248, 255, 0.98)');
-    stopperGrad.addColorStop(0.48, 'rgba(132, 193, 225, 0.96)');
-    stopperGrad.addColorStop(1, 'rgba(78, 142, 188, 0.92)');
-    ctx.fillStyle = stopperGrad;
-    ctx.strokeStyle = 'rgba(255,255,255,0.96)';
-    ctx.lineWidth = 1.1;
-    ctx.beginPath();
-    ctx.roundRect(-stopperW / 2, stopperY, stopperW, 6.8, 2.4);
+    ctx.moveTo(x(31.4), neckY(9.2));
+    ctx.bezierCurveTo(x(29.8), neckY(13.5), x(31), neckY(18.2), x(36.2), neckY(20.6));
+    ctx.ellipse(0, neckY(20.6), 13.8 * sx, 3.3 * sy, 0, Math.PI, 0, true);
+    ctx.bezierCurveTo(x(69), neckY(18.2), x(70.2), neckY(13.5), x(68.6), neckY(9.2));
+    ctx.ellipse(0, neckY(9.2), 18.6 * sx, 3.8 * sy, 0, 0, Math.PI, false);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+
+    // Elongated specular facets on both sides of the neck give the lip real depth.
+    ctx.fillStyle = 'rgba(230, 245, 255, 0.85)';
     ctx.beginPath();
-    ctx.ellipse(0, stopperY, stopperW / 2, 2.5, 0, 0, Math.PI * 2);
+    ctx.moveTo(x(57.2), neckY(11.2));
+    ctx.bezierCurveTo(x(61.5), neckY(11), x(63.6), neckY(11.6), x(62.8), neckY(15.2));
+    ctx.bezierCurveTo(x(62.2), neckY(18.2), x(60), neckY(19.8), x(56.4), neckY(20.1));
+    ctx.bezierCurveTo(x(57), neckY(17.2), x(57.5), neckY(14), x(57.2), neckY(11.2));
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(140, 190, 255, 0.62)';
+    ctx.beginPath();
+    ctx.moveTo(x(32.8), neckY(11));
+    ctx.bezierCurveTo(x(35.2), neckY(11.4), x(36.4), neckY(12.8), x(36.6), neckY(16.2));
+    ctx.bezierCurveTo(x(36.8), neckY(18.6), x(35.8), neckY(19.6), x(34), neckY(19));
+    ctx.bezierCurveTo(x(32.4), neckY(16.8), x(32), neckY(13.5), x(32.8), neckY(11));
+    ctx.fill();
+
+    ctx.strokeStyle = '#6ea6f7';
+    ctx.lineWidth = 1.3 * scale;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.ellipse(0, neckY(20.4), 14.2 * sx, 3.3 * sy, 0, Math.PI, 0, true);
+    ctx.stroke();
+
+    const topRimGrad = ctx.createLinearGradient(x(31.5), 0, x(68.5), 0);
+    topRimGrad.addColorStop(0, 'rgba(255, 250, 235, 0.82)');
+    topRimGrad.addColorStop(0.3, '#ffffff');
+    topRimGrad.addColorStop(0.65, 'rgba(254, 243, 199, 0.75)');
+    topRimGrad.addColorStop(1, '#ffffff');
+    ctx.fillStyle = topRimGrad;
+    ctx.strokeStyle = '#6b9fed';
+    ctx.lineWidth = 1 * scale;
+    ctx.beginPath();
+    ctx.ellipse(0, neckY(9.2), 18.5 * sx, 3.7 * sy, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = 'rgba(95, 159, 199, 0.8)';
-    ctx.lineWidth = 0.7;
+    ctx.lineWidth = 1.3 * scale;
+    ctx.beginPath();
+    ctx.ellipse(0, neckY(9.6), 18.1 * sx, 3.5 * sy, 0, Math.PI, Math.PI * 2);
+    ctx.stroke();
+
+    const mouthGrad = ctx.createLinearGradient(0, neckY(7.1), 0, neckY(11));
+    mouthGrad.addColorStop(0, 'rgba(180, 140, 85, 0.28)');
+    mouthGrad.addColorStop(0.6, 'rgba(255, 248, 230, 0.36)');
+    mouthGrad.addColorStop(1, 'rgba(255, 255, 255, 0.65)');
+    ctx.fillStyle = mouthGrad;
+    ctx.strokeStyle = '#5c92e6';
+    ctx.lineWidth = 0.95 * scale;
+    ctx.beginPath();
+    ctx.ellipse(0, neckY(9), 10.2 * sx, 1.9 * sy, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(140, 186, 255, 0.88)';
+    ctx.lineWidth = 0.95 * scale;
+    ctx.beginPath();
+    ctx.ellipse(0, neckY(9.4), 9.5 * sx, 1.7 * sy, 0, Math.PI, Math.PI * 2);
     ctx.stroke();
 
     ctx.restore();
